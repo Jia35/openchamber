@@ -1,12 +1,11 @@
 
-
-import type { RuntimeAPIs } from './api/types';
 import * as gitHttp from './gitApiHttp';
 import { opencodeClient } from './opencode/client';
 import { renderMagicPrompt } from './magicPrompts';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useContextStore } from '@/stores/contextStore';
 import { useConfigStore } from '@/stores/useConfigStore';
+import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 
 export type {
   GitStatus,
@@ -39,17 +38,8 @@ export type {
   CommitFileDiffResponse,
 } from './api/types';
 
-declare global {
-  interface Window {
-    __OPENCHAMBER_RUNTIME_APIS__?: RuntimeAPIs;
-  }
-}
-
 const getRuntimeGit = () => {
-  if (typeof window !== 'undefined' && window.__OPENCHAMBER_RUNTIME_APIS__?.git) {
-    return window.__OPENCHAMBER_RUNTIME_APIS__.git;
-  }
-  return null;
+  return getRegisteredRuntimeAPIs()?.git ?? null;
 };
 
 const requestChatForceScrollBottom = (sessionId: string) => {
@@ -109,6 +99,24 @@ export async function getGitStatus(directory: string, options?: { mode?: 'light'
   const runtime = getRuntimeGit();
   if (runtime) return runtime.getGitStatus(directory, options);
   return gitHttp.getGitStatus(directory, options);
+}
+
+export async function resolveGitPrimaryRoot(directory: string): Promise<string> {
+  const result = await gitHttp.resolveGitPrimaryRoot(directory);
+  return result.root;
+}
+
+export async function resolveGitTopLevel(directory: string): Promise<string> {
+  const result = await gitHttp.resolveGitTopLevel(directory);
+  return result.root;
+}
+
+export async function getGitCommitSummaries(
+  directory: string,
+  shas: string[]
+): Promise<Array<{ sha: string; short: string; subject: string }>> {
+  const result = await gitHttp.getGitCommitSummaries(directory, shas);
+  return result.commits;
 }
 
 export async function getGitDiff(directory: string, options: import('./api/types').GetGitDiffOptions): Promise<import('./api/types').GitDiffResponse> {
@@ -358,6 +366,7 @@ type SessionGenerationContext = {
   providerID: string;
   modelID: string;
   agent?: string;
+  variant?: string;
 };
 
 const resolveSessionGenerationContext = (): SessionGenerationContext | null => {
@@ -380,11 +389,17 @@ const resolveSessionGenerationContext = (): SessionGenerationContext | null => {
     return null;
   }
 
+  const agentVariant = agent
+    ? context.getAgentModelVariantForSession(sessionId, agent, selectedModel.providerId, selectedModel.modelId)
+    : undefined;
+  const variant = agentVariant || config.currentVariant || undefined;
+
   return {
     sessionId,
     providerID: selectedModel.providerId,
     modelID: selectedModel.modelId,
     agent,
+    variant,
   };
 };
 
@@ -409,6 +424,7 @@ const runStructuredGenerationInActiveSession = async ({
     providerID: generationSession.providerID,
     modelID: generationSession.modelID,
     agent: generationSession.agent,
+    variant: generationSession.variant,
   });
   const trimmedDirectory = typeof directory === 'string' ? directory.trim() : '';
   const visiblePromptText = typeof visiblePrompt === 'string' ? visiblePrompt.trim() : '';
@@ -439,6 +455,7 @@ const runStructuredGenerationInActiveSession = async ({
         modelID: generationSession.modelID,
       },
       ...(generationSession.agent ? { agent: generationSession.agent } : {}),
+      ...(generationSession.variant ? { variant: generationSession.variant } : {}),
       parts: promptParts,
     });
   });
@@ -784,6 +801,44 @@ export async function merge(
   return gitHttp.merge(directory, options);
 }
 
+export async function checkoutCommit(
+  directory: string,
+  hash: string
+): Promise<import('./api/types').CheckoutCommitResponse> {
+  const runtime = getRuntimeGit();
+  if (runtime) return runtime.checkoutCommit(directory, hash);
+  return gitHttp.checkoutCommit(directory, hash);
+}
+
+export async function cherryPick(
+  directory: string,
+  hash: string
+): Promise<import('./api/types').CherryPickResponse> {
+  const runtime = getRuntimeGit();
+  if (runtime) return runtime.cherryPick(directory, hash);
+  return gitHttp.cherryPick(directory, hash);
+}
+
+export async function revertCommit(
+  directory: string,
+  hash: string
+): Promise<import('./api/types').RevertCommitResponse> {
+  const runtime = getRuntimeGit();
+  if (runtime) return runtime.revertCommit(directory, hash);
+  return gitHttp.revertCommit(directory, hash);
+}
+
+export async function resetToCommit(
+  directory: string,
+  hash: string,
+  mode: 'soft' | 'mixed' | 'hard',
+  force?: boolean
+): Promise<import('./api/types').ResetToCommitResponse> {
+  const runtime = getRuntimeGit();
+  if (runtime) return runtime.resetToCommit(directory, hash, mode, force);
+  return gitHttp.resetToCommit(directory, hash, mode, force);
+}
+
 export async function abortMerge(directory: string): Promise<{ success: boolean }> {
   const runtime = getRuntimeGit();
   if (runtime) return runtime.abortMerge(directory);
@@ -846,7 +901,7 @@ export async function canonicalizeWorktreeState(
   cwd: string | null;
   branch: string | null;
   headState: 'branch' | 'detached' | 'unborn';
-  worktreeStatus: 'ready' | 'missing' | 'invalid' | 'not-a-repo';
+  worktreeStatus: 'pending' | 'ready' | 'missing' | 'invalid' | 'not-a-repo';
   legacy: boolean;
   degraded: boolean;
   attentionReason?: 'merge' | 'rebase' | 'cherry-pick' | 'revert' | 'bisect' | null;

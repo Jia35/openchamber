@@ -35,6 +35,10 @@ import type {
   GitRemote,
   GitRebaseResult,
   GitMergeResult,
+  CheckoutCommitResponse,
+  CherryPickResponse,
+  RevertCommitResponse,
+  ResetToCommitResponse,
 } from '@openchamber/ui/lib/api/types';
 
 export const createVSCodeGitAPI = (): GitAPI => ({
@@ -267,6 +271,7 @@ export const createVSCodeGitAPI = (): GitAPI => ({
       from: options?.from,
       to: options?.to,
       file: options?.file,
+      all: options?.all,
     });
   },
 
@@ -355,6 +360,22 @@ export const createVSCodeGitAPI = (): GitAPI => ({
     return sendBridgeMessage<{ success: boolean; conflict: boolean; conflictFiles?: string[] }>('api:git/merge/continue', { directory });
   },
 
+  checkoutCommit: async (directory: string, hash: string): Promise<CheckoutCommitResponse> => {
+    return sendBridgeMessage<CheckoutCommitResponse>('api:git/checkout-commit', { directory, hash });
+  },
+
+  cherryPick: async (directory: string, hash: string): Promise<CherryPickResponse> => {
+    return sendBridgeMessage<CherryPickResponse>('api:git/cherry-pick', { directory, hash });
+  },
+
+  revertCommit: async (directory: string, hash: string): Promise<RevertCommitResponse> => {
+    return sendBridgeMessage<RevertCommitResponse>('api:git/revert-commit', { directory, hash });
+  },
+
+  resetToCommit: async (directory: string, hash: string, mode: 'soft' | 'mixed' | 'hard', force?: boolean): Promise<ResetToCommitResponse> => {
+    return sendBridgeMessage<ResetToCommitResponse>('api:git/reset-to-commit', { directory, hash, mode, force });
+  },
+
   stash: async (
     directory: string,
     options?: { message?: string; includeUntracked?: boolean }
@@ -422,6 +443,18 @@ export const createVSCodeGitAPI = (): GitAPI => ({
     validate: async (directory: string, payload: CreateGitWorktreePayload): Promise<GitWorktreeValidationResult> => {
       return sendBridgeMessage<GitWorktreeValidationResult>('api:git/worktrees/validate', {
         directory,
+        ...(payload || {}),
+      });
+    },
+    bootstrapStatus: async (directory: string): Promise<{ status: 'pending' | 'ready' | 'failed'; error: string | null; updatedAt: number }> => {
+      return sendBridgeMessage<{ status: 'pending' | 'ready' | 'failed'; error: string | null; updatedAt: number }>('api:git/worktrees/bootstrap-status', {
+        directory,
+      });
+    },
+    preview: async (directory: string, payload: CreateGitWorktreePayload): Promise<GitWorktreeCreateResult> => {
+      return sendBridgeMessage<GitWorktreeCreateResult>('api:git/worktrees/preview', {
+        directory,
+        method: 'POST',
         ...(payload || {}),
       });
     },
